@@ -1,0 +1,6 @@
+.git
+.idea
+.claude
+*.md
+Dockerfile
+.dockerignore
