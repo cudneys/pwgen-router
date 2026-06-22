@@ -3,6 +3,10 @@
 # --- Build stage -------------------------------------------------------------
 FROM golang:1.26-alpine AS build
 
+# CA certificates for outbound HTTPS (OTLP exporter, backends) — copied into
+# the scratch image below, which has no certs of its own.
+RUN apk add --no-cache ca-certificates
+
 WORKDIR /src
 
 # Cache dependencies first.
@@ -17,9 +21,12 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/pwgen-router .
 
 # --- Runtime stage -----------------------------------------------------------
-FROM gcr.io/distroless/static-debian12:nonroot
+FROM scratch
 
 WORKDIR /
+
+# CA certificates so TLS verification works for outbound HTTPS calls.
+COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
 COPY --from=build /out/pwgen-router /pwgen-router
 
@@ -30,6 +37,8 @@ ENV GIN_MODE=release \
 
 EXPOSE 8080
 
-USER nonroot:nonroot
+# Run as a non-root numeric UID (no /etc/passwd on scratch). Matches the
+# Deployment's runAsNonRoot security context.
+USER 65532:65532
 
 ENTRYPOINT ["/pwgen-router"]

@@ -51,5 +51,4 @@ jobs:
           push: true
           # Only the explicit numeric version — no major, minor, or latest.
           tags: ${{ env.REGISTRY }}/${{ steps.image.outputs.name }}:${{ steps.version.outputs.version }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+
