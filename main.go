@@ -253,8 +253,19 @@ func (r *router) handle(c *gin.Context) {
 	}
 
 	span.SetAttributes(attribute.Int("backend.status_code", status))
-	r.backendTotal.WithLabelValues(be.name, "success").Inc()
 	r.reqTotal.WithLabelValues(fmt.Sprintf("%d", status)).Inc()
+
+	// A non-2xx response is a backend fault: surface it on the span so the
+	// error bubbles up through the distributed trace, and label the metric
+	// accordingly.
+	if status < 200 || status >= 300 {
+		err := fmt.Errorf("backend %s returned non-2xx status %d", be.name, status)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		r.backendTotal.WithLabelValues(be.name, "error").Inc()
+	} else {
+		r.backendTotal.WithLabelValues(be.name, "success").Inc()
+	}
 
 	// Mirror the backend's status and body to the caller.
 	c.Data(status, "application/octet-stream", body)
