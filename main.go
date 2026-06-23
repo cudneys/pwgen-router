@@ -274,7 +274,17 @@ func (r *router) forward(ctx context.Context, be backend) (int, []byte, error) {
 // The endpoint and other parameters are taken from the standard OTEL_* env vars
 // (e.g. OTEL_EXPORTER_OTLP_ENDPOINT). Returns a shutdown function.
 func initTracing(ctx context.Context) (func(context.Context) error, error) {
-	exporter, err := otlptracegrpc.New(ctx)
+	var opts []otlptracegrpc.Option
+	// Authenticate to the collector with a bearer token sourced from the
+	// OTEL_EXPORTER_OTLP_TOKEN env var (populated from the "token" key of the
+	// otel-bearer-token secret).
+	if token := os.Getenv("OTEL_EXPORTER_OTLP_TOKEN"); token != "" {
+		opts = append(opts, otlptracegrpc.WithHeaders(map[string]string{
+			"Authorization": "Bearer " + token,
+		}))
+	}
+
+	exporter, err := otlptracegrpc.New(ctx, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating OTLP trace exporter: %w", err)
 	}
