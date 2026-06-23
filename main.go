@@ -60,10 +60,9 @@ type router struct {
 	tracer     trace.Tracer
 
 	// metrics
-	reqTotal      *prometheus.CounterVec
-	backendTotal  *prometheus.CounterVec
-	reqDuration   *prometheus.HistogramVec
-	sleepInjected prometheus.Counter
+	reqTotal     *prometheus.CounterVec
+	backendTotal *prometheus.CounterVec
+	reqDuration  *prometheus.HistogramVec
 }
 
 func main() {
@@ -186,12 +185,7 @@ func newRouter(backends []backend, reg prometheus.Registerer) *router {
 		Buckets: prometheus.DefBuckets,
 	}, []string{"backend"})
 
-	sleepInjected := prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "pwgen_router_injected_sleeps_total",
-		Help: "Total number of requests into which artificial latency was injected.",
-	})
-
-	reg.MustRegister(reqTotal, backendTotal, reqDuration, sleepInjected)
+	reg.MustRegister(reqTotal, backendTotal, reqDuration)
 
 	// otelhttp transport propagates the active trace context (W3C traceparent,
 	// baggage, etc.) into the outbound request headers automatically.
@@ -201,30 +195,23 @@ func newRouter(backends []backend, reg prometheus.Registerer) *router {
 	}
 
 	return &router{
-		backends:      backends,
-		httpClient:    httpClient,
-		tracer:        otel.Tracer(serviceName),
-		reqTotal:      reqTotal,
-		backendTotal:  backendTotal,
-		reqDuration:   reqDuration,
-		sleepInjected: sleepInjected,
+		backends:     backends,
+		httpClient:   httpClient,
+		tracer:       otel.Tracer(serviceName),
+		reqTotal:     reqTotal,
+		backendTotal: backendTotal,
+		reqDuration:  reqDuration,
 	}
 }
 
 // handle is the / endpoint: it randomly picks a backend, forwards the request,
-// and returns the backend's response. About 1 in 100 requests get extra latency.
+// and returns the backend's response.
 func (r *router) handle(c *gin.Context) {
 	start := time.Now()
 
 	// Use the request-scoped context so spans and headers chain off the
 	// server span created by the otelgin middleware.
 	ctx := c.Request.Context()
-
-	// Inject artificial latency sparingly (~1%).
-	if rand.Intn(100) == 0 {
-		sleep := time.Duration(5+rand.Intn(1996)) * time.Millisecond // [5ms, 2000ms]
-		r.injectSleep(ctx, sleep)
-	}
 
 	be := r.backends[rand.Intn(len(r.backends))]
 
@@ -269,16 +256,6 @@ func (r *router) handle(c *gin.Context) {
 
 	// Mirror the backend's status and body to the caller.
 	c.Data(status, "application/octet-stream", body)
-}
-
-// injectSleep records and performs an artificial delay, wrapped in its own span.
-func (r *router) injectSleep(ctx context.Context, d time.Duration) {
-	_, span := r.tracer.Start(ctx, "injected-sleep",
-		trace.WithAttributes(attribute.Int64("sleep.ms", d.Milliseconds())),
-	)
-	defer span.End()
-	r.sleepInjected.Inc()
-	time.Sleep(d)
 }
 
 // forward issues the GET to the chosen backend, carrying trace headers. Any
