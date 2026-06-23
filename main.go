@@ -32,6 +32,14 @@ import (
 
 const serviceName = "pwgen-router"
 
+// Retry policy for backend calls. Any non-2xx response (or transport error) is
+// retried with exponential backoff starting at initialBackoff and doubling each
+// attempt, up to maxRetries additional attempts.
+const (
+	maxRetries     = 4
+	initialBackoff = 500 * time.Millisecond
+)
+
 // version is the build version, injected at link time via
 //
 //	-ldflags "-X main.version=<tag>"
@@ -262,8 +270,46 @@ func (r *router) injectSleep(ctx context.Context, d time.Duration) {
 	time.Sleep(d)
 }
 
-// forward issues the GET to the chosen backend, carrying trace headers.
+// forward issues the GET to the chosen backend, carrying trace headers. Any
+// non-2xx response (or transport-level error) is retried with exponential
+// backoff starting at initialBackoff, up to maxRetries additional attempts.
+// The status and body from the final attempt are returned.
 func (r *router) forward(ctx context.Context, be backend) (int, []byte, error) {
+	backoff := initialBackoff
+
+	var (
+		status int
+		body   []byte
+		err    error
+	)
+
+	for attempt := 0; ; attempt++ {
+		status, body, err = r.attempt(ctx, be)
+
+		// Success on a 2xx response; return immediately.
+		if err == nil && status >= 200 && status < 300 {
+			return status, body, nil
+		}
+
+		// Out of retries: return whatever the last attempt produced.
+		if attempt >= maxRetries {
+			return status, body, err
+		}
+
+		// Wait out the backoff interval, respecting context cancellation, then
+		// double it for the next attempt.
+		select {
+		case <-ctx.Done():
+			return status, body, ctx.Err()
+		case <-time.After(backoff):
+		}
+		backoff *= 2
+	}
+}
+
+// attempt performs a single GET to the backend, carrying trace headers, and
+// returns the response status and body (or a transport/read error).
+func (r *router) attempt(ctx context.Context, be backend) (int, []byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, be.url, nil)
 	if err != nil {
 		return 0, nil, fmt.Errorf("building request: %w", err)
