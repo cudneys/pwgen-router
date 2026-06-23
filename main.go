@@ -32,6 +32,13 @@ import (
 
 const serviceName = "pwgen-router"
 
+// version is the build version, injected at link time via
+//
+//	-ldflags "-X main.version=<tag>"
+//
+// in the build pipeline. Defaults to "dev" for local builds.
+var version = "dev"
+
 // backend represents one of the four downstream services this router fans out to.
 type backend struct {
 	name string // logical name, e.g. "char"
@@ -86,7 +93,12 @@ func main() {
 	engine := gin.New()
 	engine.Use(gin.Recovery())
 	// otelgin extracts incoming trace context and starts a server span per request.
-	engine.Use(otelgin.Middleware(serviceName))
+	// Skip the /healthz probe endpoint so liveness/readiness checks don't flood traces.
+	engine.Use(otelgin.Middleware(serviceName,
+		otelgin.WithGinFilter(func(c *gin.Context) bool {
+			return c.Request.URL.Path != "/healthz"
+		}),
+	))
 
 	engine.GET("/", r.handle)
 	engine.GET("/healthz", func(c *gin.Context) { c.String(http.StatusOK, "ok") })
@@ -294,6 +306,7 @@ func initTracing(ctx context.Context) (func(context.Context) error, error) {
 		resource.WithTelemetrySDK(),
 		resource.WithAttributes(
 			semconv.ServiceName(serviceName),
+			semconv.ServiceVersion(version),
 		),
 	)
 	if err != nil {

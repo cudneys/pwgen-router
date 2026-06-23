@@ -49,6 +49,9 @@ jobs:
         with:
           context: .
           push: true
+          # Inject the derived version into the binary at build time.
+          build-args: |
+            VERSION=${{ steps.version.outputs.version }}
           # Only the explicit numeric version — no major, minor, or latest.
           tags: ${{ env.REGISTRY }}/${{ steps.image.outputs.name }}:${{ steps.version.outputs.version }}
 

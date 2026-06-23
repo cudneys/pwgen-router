@@ -14,11 +14,15 @@ COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod \
     go mod download
 
+# Build version, supplied by the pipeline (derived from the git tag).
+ARG VERSION=dev
+
 # Build the static binary.
 COPY . .
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/pwgen-router .
+    CGO_ENABLED=0 GOOS=linux go build -trimpath \
+    -ldflags="-s -w -X main.version=${VERSION}" -o /out/pwgen-router .
 
 # --- Runtime stage -----------------------------------------------------------
 FROM scratch
