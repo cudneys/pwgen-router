@@ -24,7 +24,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: pwgen-router
-          image: ghcr.io/cudneys/pwgen-router:0.0.2
+          image: ghcr.io/cudneys/pwgen-router:0.0.3
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -35,13 +35,13 @@ spec:
             - name: GIN_MODE
               value: "release"
             - name: CHAR_SERVICE
-              value: "http://char"
+              value: "http://char/generate"
             - name: SYMBOL_SERVICE
-              value: "http://symbol"
+              value: "http://symbol/generate"
             - name: UPPERCASE_SERVICE
-              value: "http://uppercase"
+              value: "http://uppercase/generate"
             - name: NUMBER_SERVICE
-              value: "http://number"
+              value: "http://number/generate"
             # OpenTelemetry — point at your collector (OTLP/gRPC).
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "https://lee-trace-ingest.apporto.com:443"
